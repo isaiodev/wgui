@@ -10,6 +10,8 @@ from src.backend.profiles import ProfileManager
 from src.backend.settings import SettingsManager
 from src.backend.backup import NetworkBackupManager
 from src.utils.paths import get_assets_dir
+from src.ui.dialogs import AddProfileDialog
+import sys
 
 class MainWindow(QMainWindow):
     connect_signal = Signal(str)
@@ -22,7 +24,7 @@ class MainWindow(QMainWindow):
         self.settings_manager = settings_manager
         self.backup_manager = backup_manager
 
-        self.setWindowTitle("WireGuard GUI")
+        self.setWindowTitle(self.tr("WireGuard GUI"))
         self.resize(900, 600)
 
         # Central Widget
@@ -48,16 +50,17 @@ class MainWindow(QMainWindow):
             QListWidget::item:selected { background-color: #3D3D3D; }
         """)
         self.profile_list.itemClicked.connect(self.on_profile_selected)
-        sidebar_layout.addWidget(QLabel("PROFILES"))
+        sidebar_layout.addWidget(QLabel(self.tr("PROFILES")))
         sidebar_layout.addWidget(self.profile_list)
 
         # Add Profile Button
-        add_btn = QPushButton("+ Add Tunnel")
+        add_btn = QPushButton(self.tr("+ Add Tunnel"))
         add_btn.setStyleSheet("border: 1px solid #555; padding: 5px; border-radius: 4px;")
+        add_btn.clicked.connect(self.open_add_profile_dialog)
         sidebar_layout.addWidget(add_btn)
 
         # Settings Button (in Sidebar)
-        settings_btn = QPushButton("⚙ Settings")
+        settings_btn = QPushButton(self.tr("⚙ Settings"))
         settings_btn.setStyleSheet("border: 1px solid #555; padding: 5px; border-radius: 4px; margin-top: 10px;")
         settings_btn.clicked.connect(self.show_settings)
         sidebar_layout.addWidget(settings_btn)
@@ -70,7 +73,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.content_area)
 
         # Default View (No profile selected)
-        self.no_profile_view = QLabel("Select a tunnel to view details")
+        self.no_profile_view = QLabel(self.tr("Select a tunnel to view details"))
         self.no_profile_view.setAlignment(Qt.AlignCenter)
         self.content_area.addWidget(self.no_profile_view)
 
@@ -106,6 +109,11 @@ class MainWindow(QMainWindow):
     def show_settings(self):
         self.content_area.setCurrentWidget(self.settings_view)
 
+    def open_add_profile_dialog(self):
+        dialog = AddProfileDialog(self.profile_manager, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.refresh_profiles()
+
     def on_connect_clicked(self):
         profile = self.detail_view.current_profile
         if profile:
@@ -124,19 +132,19 @@ class ProfileDetailView(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignTop)
 
-        self.name_label = QLabel("Profile Name")
+        self.name_label = QLabel(self.tr("Profile Name"))
         self.name_label.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(self.name_label)
 
-        self.status_label = QLabel("Status: Disconnected")
+        self.status_label = QLabel(self.tr("Status: Disconnected"))
         layout.addWidget(self.status_label)
 
-        self.stats_label = QLabel("Data: 0 B received, 0 B sent")
+        self.stats_label = QLabel(self.tr("Data: 0 B received, 0 B sent"))
         layout.addWidget(self.stats_label)
 
         layout.addStretch()
 
-        self.connect_btn = QPushButton("Connect")
+        self.connect_btn = QPushButton(self.tr("Connect"))
         self.connect_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50; color: white; border: none;
@@ -144,7 +152,7 @@ class ProfileDetailView(QWidget):
             }
             QPushButton:hover { background-color: #45a049; }
         """)
-        self.disconnect_btn = QPushButton("Disconnect")
+        self.disconnect_btn = QPushButton(self.tr("Disconnect"))
         self.disconnect_btn.setStyleSheet("""
             QPushButton {
                 background-color: #f44336; color: white; border: none;
@@ -165,7 +173,18 @@ class ProfileDetailView(QWidget):
         self.name_label.setText(name)
 
     def set_status(self, status):
-        self.status_label.setText(f"Status: {status.title()}")
+        # We assume status comes in English keywords (connected, disconnected, etc)
+        # We can translate the display string.
+        display_status = status.title()
+        if status == "connected":
+             display_status = self.tr("Connected")
+        elif status == "disconnected":
+             display_status = self.tr("Disconnected")
+        elif status == "error":
+             display_status = self.tr("Error")
+
+        self.status_label.setText(self.tr("Status: {0}").format(display_status))
+
         if status == "connected":
             self.connect_btn.hide()
             self.disconnect_btn.show()
@@ -187,16 +206,16 @@ class SettingsView(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignTop)
 
-        layout.addWidget(QLabel("Settings"))
+        layout.addWidget(QLabel(self.tr("Settings")))
 
         # Start on Boot
-        self.boot_check = QCheckBox("Start on Boot")
+        self.boot_check = QCheckBox(self.tr("Start on Boot"))
         self.boot_check.setChecked(self.settings_manager.get("start_on_boot", False))
         self.boot_check.stateChanged.connect(lambda s: self.settings_manager.set("start_on_boot", bool(s)))
         layout.addWidget(self.boot_check)
 
         # Kill Switch
-        self.kill_check = QCheckBox("Kill Switch (Block traffic if VPN drops)")
+        self.kill_check = QCheckBox(self.tr("Kill Switch (Block traffic if VPN drops)"))
         self.kill_check.setChecked(self.settings_manager.get("kill_switch", False))
         self.kill_check.stateChanged.connect(lambda s: self.settings_manager.set("kill_switch", bool(s)))
         layout.addWidget(self.kill_check)
@@ -204,37 +223,40 @@ class SettingsView(QWidget):
         layout.addSpacing(20)
 
         # Network Backup Section
-        layout.addWidget(QLabel("Network Backup & Restore"))
+        layout.addWidget(QLabel(self.tr("Network Backup & Restore")))
 
-        self.backup_btn = QPushButton("Create Network Backup")
-        self.backup_btn.clicked.connect(self.create_backup)
-        self.backup_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px; border-radius: 4px;")
-        layout.addWidget(self.backup_btn)
+        if sys.platform != "win32":
+            self.backup_btn = QPushButton(self.tr("Create Network Backup"))
+            self.backup_btn.clicked.connect(self.create_backup)
+            self.backup_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px; border-radius: 4px;")
+            layout.addWidget(self.backup_btn)
 
-        self.restore_btn = QPushButton("Restore Last Backup")
-        self.restore_btn.clicked.connect(self.restore_backup)
-        self.restore_btn.setStyleSheet("background-color: #FF9800; color: white; padding: 8px; border-radius: 4px;")
-        layout.addWidget(self.restore_btn)
+            self.restore_btn = QPushButton(self.tr("Restore Last Backup"))
+            self.restore_btn.clicked.connect(self.restore_backup)
+            self.restore_btn.setStyleSheet("background-color: #FF9800; color: white; padding: 8px; border-radius: 4px;")
+            layout.addWidget(self.restore_btn)
+        else:
+            layout.addWidget(QLabel(self.tr("Backup feature not available on Windows yet.")))
 
     def create_backup(self):
         backup_path = self.backup_manager.create_backup()
         if backup_path:
-            QMessageBox.information(self, "Backup", f"Backup created at:\n{backup_path}")
+            QMessageBox.information(self, self.tr("Backup"), self.tr("Backup created at:\n{0}").format(backup_path))
         else:
-            QMessageBox.critical(self, "Backup Error", "Failed to create backup. Check logs/permissions.")
+            QMessageBox.critical(self, self.tr("Backup Error"), self.tr("Failed to create backup. Check logs/permissions."))
 
     def restore_backup(self):
         backups = self.backup_manager.list_backups()
         if not backups:
-             QMessageBox.information(self, "Restore", "No backups found.")
+             QMessageBox.information(self, self.tr("Restore"), self.tr("No backups found."))
              return
 
         # Just restore the latest for now (Simplicity)
         latest = backups[0]
-        ret = QMessageBox.warning(self, "Restore", f"Restore backup from {latest.name}?\nThis will overwrite current network settings.", QMessageBox.Yes | QMessageBox.No)
+        ret = QMessageBox.warning(self, self.tr("Restore"), self.tr("Restore backup from {0}?\nThis will overwrite current network settings.").format(latest.name), QMessageBox.Yes | QMessageBox.No)
 
         if ret == QMessageBox.Yes:
             if self.backup_manager.restore_backup(latest):
-                 QMessageBox.information(self, "Restore", "Restore successful. Please restart networking or reboot.")
+                 QMessageBox.information(self, self.tr("Restore"), self.tr("Restore successful. Please restart networking or reboot."))
             else:
-                 QMessageBox.critical(self, "Restore Error", "Failed to restore backup.")
+                 QMessageBox.critical(self, self.tr("Restore Error"), self.tr("Failed to restore backup."))

@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import datetime
 import logging
+import platform
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,16 +10,21 @@ logger = logging.getLogger(__name__)
 
 class NetworkBackupManager:
     def __init__(self, backup_base_dir: str = "/root/network-backups"):
-        # The script uses /root/network-backups, but strictly speaking
-        # hardcoding /root/ inside python might be rigid.
-        # However, following the script logic:
         self.backup_base = Path(backup_base_dir)
+
+    def is_supported(self) -> bool:
+        """Check if backup is supported on this platform."""
+        return platform.system() == "Linux"
 
     def create_backup(self) -> Optional[Path]:
         """
         Creates a backup of network configurations.
         Returns the path to the backup directory if successful, None otherwise.
         """
+        if not self.is_supported():
+             logger.warning("Network backup is only supported on Linux.")
+             return None
+
         if not self.backup_base.exists():
             try:
                 self.backup_base.mkdir(parents=True, exist_ok=True)
@@ -92,6 +98,9 @@ class NetworkBackupManager:
         Restores a backup from the given directory.
         Returns True if successful.
         """
+        if not self.is_supported():
+            return False
+
         if not backup_dir.exists():
             return False
 
